@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: myapp
+
+    steps:
+      - name: checkout-code
+        uses: actions/checkout@v4
+
+      - name: jdk17-setup
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: compile
+        run: mvn -B clean package
+
+      - name: upload-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-jar
+          path: myapp/target/*.jar
+          if-no-files-found: error
