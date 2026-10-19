@@ -5,4 +5,4 @@ type: application
 # Chart version - bump manually when the chart itself changes
 version: 0.1.0
 # App/image version - updated automatically by the CI version-bump step
-appVersion: "1.0.1"
+appVersion: "1.0.2"
