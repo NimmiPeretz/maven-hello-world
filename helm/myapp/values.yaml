@@ -1,0 +1,32 @@
+image:
+  # Docker Hub repository: <dockerhub-username>/myapp
+  repository: ""
+  # Defaults to the chart's appVersion (= the JAR version) when empty
+  tag: ""
+  pullPolicy: IfNotPresent
+
+job:
+  backoffLimit: 2
+  # Set to e.g. 3600 to let Kubernetes delete the finished Job automatically
+  ttlSecondsAfterFinished: null
+
+# Must match the numeric UID/GID created in the Dockerfile
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

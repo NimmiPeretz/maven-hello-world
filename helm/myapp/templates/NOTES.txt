@@ -1,0 +1,5 @@
+{{ include "myapp.image" . }} is running as Job {{ include "myapp.fullname" . }}-{{ .Release.Revision }}.
+
+Check it:
+  kubectl get jobs,pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "myapp.fullname" . }}-{{ .Release.Revision }}

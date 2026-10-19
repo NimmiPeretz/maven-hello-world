@@ -145,3 +145,32 @@ The Maven’s jar plugin will create jar file and we need to define the main cla
                 └── app
                     └── AppTest.class
 ```
+
+# CI/CD pipeline (GitHub Actions)
+The workflow `.github/workflows/ci.yml` runs on every push to `master` (and manually via *Run workflow*):
+
+| Job | What it does |
+|---|---|
+| `build` | Increases the patch version in `pom.xml` (1.0.0 → 1.0.1), compiles and packages the JAR inside the multistage `myapp/Dockerfile`, uploads the JAR as a build artifact, builds a non-root Docker image tagged with the JAR version (plus `latest`), pushes it to Docker Hub, and commits the bumped version back to `master` (`[skip ci]`). |
+| `pull-and-run` | Pulls the pushed image from Docker Hub, runs it (expects "Hello World" in the output) and verifies it does not run as root. |
+
+## Setup
+The pipeline needs these repository secrets (*Settings → Secrets and variables → Actions*):
+
+| Secret | Value |
+|---|---|
+| `DOCKERHUB_USERNAME` | Docker Hub user the image is pushed to (`<user>/myapp`) |
+| `DOCKERHUB_TOKEN` | Docker Hub access token with *Read & Write* scope (not the account password) |
+
+Secrets are not copied with forks — each repository that runs the pipeline needs its own.
+
+The `build` job commits the version bump back to `master` (`permissions: contents: write`), so branch protection rules on `master`, if any, must allow GitHub Actions to push.
+
+After each pipeline run, `git pull` before pushing again — the remote `master` has the bot's version-bump commit.
+
+## Run the published image
+The Docker Hub repository is public, so no credentials are needed:
+
+    docker pull <user>/myapp:<version>
+    docker run --rm <user>/myapp:<version>
+    docker run --rm --entrypoint id <user>/myapp:<version>   # expect uid=10001(appuser)

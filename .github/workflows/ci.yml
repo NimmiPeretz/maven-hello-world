@@ -5,9 +5,21 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# One run at a time per branch: each run bumps the version and pushes a commit
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  #Job #1 - Build process with all needed steps 
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # commit the bumped pom.xml / Chart.yaml back
+
+    outputs:
+      version: ${{ steps.version-increase.outputs.version }}
 
     defaults:
       run:
@@ -16,6 +28,8 @@ jobs:
     steps:
       - name: checkout-code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}   # branch tip, so a queued run sees the previous run's bump commit
 
       - name: jdk17-setup
         uses: actions/setup-java@v6
@@ -24,12 +38,85 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: compile
-        run: mvn -B clean package
+      # Increase Version 
+      - name: increase-version
+        id: version-increase 
+        run: |
+          mvn -B -q org.codehaus.mojo:build-helper-maven-plugin:3.6.2:parse-version \
+            org.codehaus.mojo:versions-maven-plugin:2.23.0:set \
+            -DnewVersion='${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}' \
+            -DgenerateBackupPoms=false
+          VERSION=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
+          sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" ../helm/myapp/Chart.yaml
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "### Version: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: buildx-setup
+        uses: docker/setup-buildx-action@v4
+
+      #Compile and Pack
+      - name: compile-and-package
+        uses: docker/build-push-action@v7
+        with:
+          context: myapp
+          target: artifact
+          outputs: type=local,dest=dist
+
+      #Upload the artifact 
       - name: upload-artifact
         uses: actions/upload-artifact@v7
         with:
           name: myapp-jar
-          path: myapp/target/*.jar
+          path: dist/*.jar
           if-no-files-found: error
+
+      - name: dockerhub-login
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      #Create the docker image (non-root), tag it and pushed to Docker Hub
+      - name: docker-build-and-push
+        uses: docker/build-push-action@v7
+        with:
+          context: myapp
+          target: runtime
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/myapp:${{ steps.version-increase.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/myapp:latest
+
+      #Commit changes on pom.xml AND Chart.yaml to remote repo 
+      - name: commit-version
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add myapp/pom.xml helm/myapp/Chart.yaml
+          git commit -m "ci: bump version to ${{ steps.version-increase.outputs.version }} [skip ci]"
+          git push
+
+  #Job #2 - pull and run the docker image, with a None-Root user 
+  pull-and-run:
+    runs-on: ubuntu-latest
+    needs: build
+
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/myapp:${{ needs.build.outputs.version }}
+
+    steps:
+      - name: docker-pull
+        run: docker pull "$IMAGE"
+
+      - name: docker-run
+        run: |
+          OUTPUT=$(docker run --rm "$IMAGE")
+          echo "$OUTPUT"
+          grep -q "Hello World" <<< "$OUTPUT"
+
+      - name: verify-non-root
+        run: |
+          ID=$(docker run --rm --entrypoint id "$IMAGE")
+          echo "$ID"
+          [[ "$ID" != uid=0* ]]
