@@ -1,6 +1,6 @@
 image:
   # Docker Hub repository: <dockerhub-username>/myapp
-  repository: ""
+  repository: "nimmiperetz/myapp"
   # Defaults to the chart's appVersion (= the JAR version) when empty
   tag: ""
   pullPolicy: IfNotPresent
